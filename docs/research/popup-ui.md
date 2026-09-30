@@ -12,6 +12,28 @@ This is a recommendation under the map's **immediate-mode UI** constraint, not a
 
 If “immediate-mode” can later permit **one native editor exception**, `NSTextView` inside this same panel is substantially simpler and the best text/IME implementation. That would be a scope change, **not** the recommendation silently substituted here. Apple describes it as the normal/easiest interface to the text system, with editing, selection, wrapping and copy/paste already implemented. [2][3]
 
+## Reused Sendpoint research: what transfers and what does not
+
+Read all three sibling-project reports supplied by the user: [UI-library comparison][S1], [native UI surface plan][S2], and [Odin/AppKit feasibility][S3]. They arrived after this report's first commit. This revision reuses their settled host/interop findings instead of proposing another broad toolkit or AppKit-feasibility investigation. Their recommendations address different scopes and must not be treated as three votes for the same product requirements.
+
+| Prior finding | Check against primary evidence / action for jot |
+| --- | --- |
+| Own the panel and AppKit loop; Core Graphics/native text drawing is sufficient; GPU machinery is not inherently required. [S1][S3] | Agrees with the Apple drawing contract and Odin/native package audit above. Read the committed [Odin-only AppKit spike][S4]: `drawRect:` obtains the native CGContext, calls `CGContextFillRect`/`CTLineDraw`, and restores graphics state; runtime classes supply panel/view callbacks. **`odin check … -file` passed here.** Reuse that narrow host/drawing boundary as a reference, not a second new feasibility spike. Prior runtime success remains attributed to Sendpoint, not claimed as a new run here. |
+| microui is single-line; SDL can adopt a panel; raylib can wait for events but normally owns its GLFW window. [S1] | Independently confirmed in the installed microui and matching SDL/raylib sources cited above. In particular, raylib's `glfwWaitEvents` branch is real: reject it for ownership/editor friction, **not** an alleged mandatory 60 Hz loop. No further candidate search needed. |
+| `core:text/edit` supplies useful buffer/selection/undo machinery, not visual wrapping or IME; its `begin` resets state. [S1] | Reused and ran Sendpoint's **existing** [26-line probe][S5] unchanged in temporary storage: `PASS: multiline buffer, host-supplied Up, begin selects all; microui Context=271672 bytes`. Read installed `text_edit.odin`: `begin` selects the whole buffer and clears undo/redo; `setup_once` avoids repeating that reset. Do not call `begin` on every redraw of a persistent Note. No replacement probe was written. |
+| Odin can call native controls and text services without Swift or an Objective-C shim. [S2][S3] | The original Odin spike passed compiler checking here, and its typed messages/runtime registration/foreign drawing declarations match the installed core APIs. Reuse the proven language boundary; our earlier Objective-C probe was an API-isolation convenience, **not** evidence that production needs an Objective-C bridge. Full generated-binding coverage and every runtime claim in those reports were not revalidated. |
+| Native `NSTextView` saves editing and accessibility work. [S2][S3] | Confirmed by Apple's text-system documentation. Keep it as the explicit scope-relaxation alternative, not jot's default: the map requires immediate-mode UI, unlike those native-control rewrite reports. |
+| “Visible, inactive” is not “typing correctly while inactive.” [S2][S3] | Read the original AppKit spike's show path: it uses `orderFrontRegardless` without `makeKeyWindow`; the panel is **titled + nonactivating** (`1 | 1<<7`), unlike jot's borderless probe. The reported inactive result therefore does not contradict the key-panel `isActive=true` caveat here or in [S2]. Preserve its passive-show approach for voice preview; do not reuse it as proof of jot's required editable nonactivating state. |
+
+**Constraint differences that change the choice:**
+
+- Sendpoint's UI-library comparison explicitly excluded IME/CJK composition and prioritized a capture preview. Jot explicitly requires a typing Note with multiline wrapping, cursor, selection, paste and IME evaluation. `core:text/edit` alone does not close that gap. It can be reused for UTF-8 buffer/edit transactions if desired, but avoid two competing authoritative buffers: synchronize TextKit's UTF-16 layout/input view of the text transactionally, preserving marked ranges and undo. Native TextKit layout is recommended over rebuilding those services atop a glyph atlas.
+- Sendpoint's surface plan intentionally **activates** its typed editor and palette, while retaining a passive voice HUD. Jot wants typed Note input without activating jot; only the host/interoperability facts transfer, not that editor activation policy.
+- Sendpoint's comparison ranks plain procedural rectangle layout above microui, and Clay/Dear ImGui are available alternatives there. For jot, microui is an already-installed, no-extra-C-library source of basic controls; keep it thin and **do not make the custom Note depend on its textbox**. Plain rectangle layout remains an equivalent smaller substitution if ticket #8 leaves only a bar/editor and no useful microui controls. The main decision is native host/render/text services, not a requirement to wrap every rectangle in microui. Clay/ImGui are not silently added under jot's constrained dependency budget.
+- The native Sendpoint reports include settings, palette, setup, materials and broad control bindings. Jot's current popup research should reuse only the narrow shell/drawing/ownership patterns. A generated binding source such as the one surveyed there may save declaration work, but adding a large binding collection is not required or newly approved here; pin/review declarations and their license before reuse.
+
+These reports already establish that “can Odin drive AppKit?” is not the open question. The remaining work is **jot-specific custom editor, focus, IME and accessibility integration**, not recreating Sendpoint's feasibility demonstration.
+
 ## What the candidates actually provide
 
 | Setup | Window and run loop | Note editing / fonts | Assessment |
@@ -113,6 +135,21 @@ The native probe was Objective-C only to isolate Apple API behaviour without bui
 ### Not confirmed / next acceptance probe
 
 Before implementation is called complete, run a small **Odin panel + editor** spike: type into it while another app stays frontmost; dismiss and type back in the source app; test dead keys and Japanese/Chinese IME, marked replacement and candidate positioning, emoji/combining-mark deletion, wrapping/vertical selection, Command-V, multiple Retina/non-Retina screens, Spaces/full-screen/Stage Manager, status-menu tracking while recording, and VoiceOver. No real user typing, full IME session, embedded SDL panel, multi-display movement or graphics quality comparison was tested here. The architectural recommendation does not waive those requirements.
+
+## Reused research and its executable sources
+
+[S1]: https://github.com/saiashirwad/sendpoint/blob/91c0f13f5d5915101d6641c99e0cf50fb71d23ff/docs/research/odin-ui-lib.md
+[S2]: https://github.com/saiashirwad/sendpoint/blob/f75126015666d6428203f1ef979696fc6b9f9178/docs/research/odin-ui.md
+[S3]: https://github.com/saiashirwad/sendpoint/blob/3eb22fd9c2b281a632bda8dd28a82fbcf9a89136/docs/research/odin-appkit.md
+[S4]: https://github.com/saiashirwad/sendpoint/blob/3eb22fd9c2b281a632bda8dd28a82fbcf9a89136/docs/research/odin-appkit/main.odin
+[S5]: https://github.com/saiashirwad/sendpoint/blob/91c0f13f5d5915101d6641c99e0cf50fb71d23ff/docs/research/odin-ui-lib/text-edit-probe.odin
+
+- **S1:** [Sendpoint UI-library comparison][S1], pinning the supplied `research/odin-ui-lib` branch to its observed commit `91c0f13`.
+- **S2:** [Sendpoint native UI surface plan][S2] at the supplied commit.
+- **S3:** [Sendpoint Odin/AppKit feasibility][S3] at the supplied commit.
+- **S4:** [Original Odin AppKit spike][S4], source-inspected and compiler-checked here, not rerun.
+- **S5:** [Original text-edit probe][S5], rerun unchanged here using `odin run <temporary-copy> -file -minimum-os-version:13.0 -out:<temporary-binary>`.
+- **Checked primary implementation:** [Odin `core:text/edit`](https://github.com/odin-lang/Odin/blob/a2fb372b76e81ef31fbbc8a2cf2b4fdf5ac6c924/core/text/edit/text_edit.odin), particularly `State`, `begin`, `setup_once`, and `translate`.
 
 ## Primary sources
 
